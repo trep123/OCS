@@ -1,73 +1,56 @@
-# OCS 网课助手（thin-client + local-server 架构）
+# OCS 网课助手
 
-油猴脚本只做三件事：**抓题目和选项 → 发给本地 server → 把答案填回页面**。
-所有决策（AI 调用、知识库检索、会话记录复用）都在本地 server 完成，API Key 只存在于 server 环境变量，不进浏览器。
+单文件油猴/脚本猫脚本（`OCS 网课助手.user.js`），保留原脚本全部功能（超星/知到/职教云/MOOC/雨课堂 的作业与章节测试答题、视频挂机、面板配置等）。
 
-```
-┌────────────────────────┐   POST /api/answer    ┌──────────────────────────────┐
-│ 油猴脚本（薄客户端）      │ ────────────────────► │ 本地 server 127.0.0.1:19818   │
-│  platforms/ 抓题+填答案  │ ◄──────────────────── │  session/ 会话记录命中 → 直接返回 │
-│  transport/ GM_xhr      │      AnswerResponse   │  kb/     知识库检索 → 注入提示词 │
-│  @connect 仅 127.0.0.1  │                       │  ai/     OpenAI 兼容接口 + 重试  │
-└────────────────────────┘                       └──────────────────────────────┘
-```
+自 `4.15.3-ai.16` 起的唯一功能变更：**知识库改为 API 接入自建后端**，不再在浏览器本地解析/存储资料；脚本设置面板中可勾选哪些后端知识库参与答题（交互参照腾讯 ima 的知识库选择器）。
 
-## 目录结构
+## 知识库后端接口约定
 
-```
-legacy/                 旧版单文件 bundle（本地回归基线，不入 git）
-src/
-  shared/               两端共用
-    protocol.ts         HTTP 协议 DTO：AnswerRequest/AnswerResponse/FeedbackRequest
-    matcher/            答案归一化与匹配（纯函数，已迁移 + 有测试）
-  userscript/           油猴薄客户端
-    shell/              metadata.ts（生成 userscript 头）+ bootstrap.ts（装配）
-    transport/          server-client.ts：GM_xmlhttpRequest → 本地 server
-    platforms/          每平台一个目录：observeQuestions（抓题）+ writeAnswer（填答案）
-    ui/                 状态悬浮条
-  server/               本地决策服务（node:http，零运行时依赖）
-    config.ts           环境变量配置
-    ai/                 OpenAI 兼容客户端（重试/退避）+ 提示词构建 + JSON 解析
-    kb/                 知识库：data/kb/*.txt|md，bigram 关键词检索
-    session/            会话记录：data/sessions/*.jsonl，命中直接返回 + feedback 记录
-    index.ts            HTTP 路由：/health /api/answer /api/feedback
-data/                   运行时数据（gitignored）
-  kb/                   放知识库文档（.txt / .md，空行分段）
-  sessions/             会话记录 JSONL（自动生成）
+设置项「知识库 API 地址」填后端 base（如 `http://127.0.0.1:8000`），可选「知识库 API Key」以 `Authorization: Bearer <key>` 发送。后端需实现两个接口：
+
+### GET {base}/api/kb/libs
+
+返回可选知识库列表：
+
+```json
+{ "libs": [ { "id": "lib-math", "name": "高等数学", "count": 120 } ] }
 ```
 
-## 决策优先级（server 端）
+### POST {base}/api/kb/search
 
-1. **会话记录**：同平台同题干曾答过 → 直接返回（source: `session`）
-2. **知识库 + AI**：KB 检索相关段落注入提示词 → AI 作答 → 记录进会话
-3. 客户端可通过 `/api/feedback` 上报对错，写入 `feedback.jsonl` 供后续调优
+请求：
 
-## 使用
-
-```bash
-npm install
-
-# 启动本地 server（配置 AI）
-OCS_AI_KEY=sk-xxx npm run dev:server
-# 可选环境变量：OCS_PORT / OCS_AI_BASE / OCS_AI_MODEL / OCS_AI_TIMEOUT / OCS_DATA_DIR
-
-npm run build          # 产出 dist/OCS 网课助手.user.js + dist/server/index.mjs
-npm run typecheck && npm test
+```json
+{ "libs": ["lib-math"], "query": "题干 + 选项拼接文本", "topK": 5 }
 ```
 
-安装 `dist/OCS 网课助手.user.js` 到油猴/脚本猫即可。脚本默认连 `http://127.0.0.1:19818`，
-可在脚本管理器存储中设置 `ocs.server` 覆盖。
+响应（按相关度降序）：
 
-## 安全边界
+```json
+{
+  "chunks": [
+    { "text": "命中的资料片段正文", "title": "第一章 极限", "libName": "高等数学", "score": 0.83 }
+  ]
+}
+```
 
-- 油猴脚本 `@connect` 仅 `127.0.0.1` / `localhost`，`@grant` 仅 4 项，无密钥存储
-- server 仅监听回环地址；请求体上限 2MB；AI 错误信息不回传密钥
+- `libs` 只包含用户在面板中勾选的库；未勾选的库后端不应查询
+- `title`/`libName` 用于提示词中的资料出处标注，可省略（回退为"知识库资料"）
+- 检索失败或返回空时脚本静默降级为纯 AI 作答，状态栏提示连接情况
 
-## 迁移进度
+## 设置面板（知识库答题·API 接入）
 
-- [x] 协议定义 + 双端骨架 + 构建管线
-- [x] shared/matcher 纯函数（含测试）
-- [x] server：AI 客户端 / KB 检索 / 会话记录 / HTTP 路由（可运行）
-- [ ] platforms：各平台抓题与答案写回（从 legacy bundle 逐个迁移，每迁一个跑真实页面回归）
-- [ ] 客户端 UI：悬浮面板、设置、手动反馈入口
-- [ ] server：RAG 向量化检索、feedback 驱动的会话记录纠错
+| 设置项 | 说明 |
+|---|---|
+| 启用知识库 | 总开关 |
+| 知识库 API 地址 | 后端 base |
+| 知识库 API Key | 可选 Bearer Token |
+| 知识库检索片段数 | topK，1-15 |
+| 资料字数上限 | 注入提示词的总字数上限 |
+| 知识库选择 | 打开选择器：拉取 `/api/kb/libs`，勾选库后保存（存于 `aiKbLibs`） |
+| 知识库状态 | 只读：未启用 / 未配置地址 / 未选择库 / 已连接·库名 / 连接失败原因 |
+
+## 仓库说明
+
+- `OCS 网课助手.user.js`：产品脚本，直接安装使用；后续修改以 `ai.N` 补丁段形式增量进行
+- `legacy/OCS 网课助手.user.js`：旧版基线，仅本地保留（不入 git），用于选择器/逻辑移植对照
