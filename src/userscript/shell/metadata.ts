@@ -1,5 +1,3 @@
-import { AI_PROVIDERS } from '../ai/config';
-
 export interface UserscriptMetadata {
 	name: string;
 	version: string;
@@ -7,35 +5,21 @@ export interface UserscriptMetadata {
 	author: string;
 	license: string;
 	namespace: string;
-	homepage: string;
-	source: string;
 	match: string[];
 	connect: string[];
 	grant: string[];
 	runAt: string;
 }
 
-function providerHosts(): string[] {
-	const hosts = new Set<string>(['localhost', '127.0.0.1']);
-	for (const profile of Object.values(AI_PROVIDERS)) {
-		try {
-			if (profile.endpoint) hosts.add(new URL(profile.endpoint).hostname);
-		} catch {
-			/* endpoint 为空或非法时跳过 */
-		}
-	}
-	return [...hosts];
-}
+export const SERVER_ORIGIN = 'http://127.0.0.1:19818';
 
 export const metadata: UserscriptMetadata = {
 	name: 'OCS 网课助手',
 	version: '5.0.0-alpha.0',
-	description: 'OCS 网课助手（模块化重构版）',
+	description: 'OCS 薄客户端：抓取题目与选项，答案决策由本地 server（AI + 知识库 + 会话记录）完成',
 	author: 'enncy',
 	license: 'MIT',
 	namespace: 'https://enncy.cn',
-	homepage: 'https://docs.ocsjs.com',
-	source: 'https://github.com/ocsjs/ocsjs',
 	match: [
 		'*://*.chaoxing.com/*',
 		'*://*.edu.cn/*',
@@ -44,18 +28,8 @@ export const metadata: UserscriptMetadata = {
 		'*://*.icourse163.org/*',
 		'*://*.yuketang.cn/*',
 	],
-	connect: providerHosts(),
-	grant: [
-		'GM_info',
-		'GM_getValue',
-		'GM_setValue',
-		'GM_deleteValue',
-		'GM_listValues',
-		'GM_addValueChangeListener',
-		'GM_removeValueChangeListener',
-		'GM_xmlhttpRequest',
-		'GM_notification',
-	],
+	connect: ['127.0.0.1', 'localhost'],
+	grant: ['GM_info', 'GM_getValue', 'GM_setValue', 'GM_xmlhttpRequest'],
 	runAt: 'document-idle',
 };
 
@@ -68,8 +42,6 @@ export function buildUserscriptHeader(m: UserscriptMetadata): string {
 		['@author', m.author],
 		['@license', m.license],
 		['@namespace', m.namespace],
-		['@homepage', m.homepage],
-		['@source', m.source],
 		['@run-at', m.runAt],
 	];
 	for (const [key, value] of scalar) lines.push(`// ${key.padEnd(14)}${value}`);

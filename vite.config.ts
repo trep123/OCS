@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { metadata, buildUserscriptHeader } from './src/shell/metadata';
+import { metadata, buildUserscriptHeader } from './src/userscript/shell/metadata';
 
 function userscriptHeader(): Plugin {
 	const header = buildUserscriptHeader(metadata);
@@ -22,11 +22,12 @@ export default defineConfig({
 		target: 'es2020',
 		minify: false,
 		lib: {
-			entry: 'src/shell/bootstrap.ts',
+			entry: 'src/userscript/shell/bootstrap.ts',
 			name: 'OCS',
 			formats: ['iife'],
 			fileName: () => `${metadata.name}.user.js`,
 		},
 		outDir: 'dist',
+		emptyOutDir: false,
 	},
 });

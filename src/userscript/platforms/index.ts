@@ -11,4 +11,4 @@ export function matchPlatform(url: URL): Platform | undefined {
 	return PLATFORMS.find((p) => p.detect(url));
 }
 
-export type { Platform, PlatformDeps, PlatformSession } from './types';
+export type { Platform, PlatformSession } from './types';
