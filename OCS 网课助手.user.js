@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				4.15.3-ai.17
+// @version    				4.15.3-ai.18
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -4506,7 +4506,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       visionMode: String(config.aiVisionMode || "auto"),
       persistentCache: config.aiPersistentCache !== false,
       kbEnabled: Boolean(config.aiKbEnabled),
-      kbTopK: Math.max(1, Math.min(15, Number.isFinite(Number(config.aiKbTopK)) && Number(config.aiKbTopK) > 0 ? Number(config.aiKbTopK) : 5)),
+      kbTopK: Math.max(1, Math.min(50, Number.isFinite(Number(config.aiKbTopK)) && Number(config.aiKbTopK) > 0 ? Number(config.aiKbTopK) : 5)),
       kbContextChars: Math.max(500, Math.min(12000, Number.isFinite(Number(config.aiKbContextChars)) && Number(config.aiKbContextChars) > 0 ? Number(config.aiKbContextChars) : 3000)),
       kbApiBase: String(config.aiKbApiBase || "").trim(),
       kbApiKey: String(config.aiKbApiKey || "").trim(),
@@ -5046,10 +5046,11 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       response: void 0, data: void 0, error: error ? redactAISecret(error.message || error) : void 0
     };
   }
-  // ==================== AI 知识库（API 接入，ai.16） ====================
-  // 知识库改为自建后端服务：脚本只通过 API 拉取库列表与检索结果，不再本地解析/存储资料。
+  // ==================== AI 知识库（API 接入，ai.18） ====================
+  // 知识库改为自建后端网关：脚本只通过 API 拉取库列表与检索结果，不再本地解析/存储资料。
   // UI 可勾选哪些后端库参与答题（参照腾讯 ima 的知识库选择器）。
-  // 接口约定见仓库 README：GET {base}/api/kb/libs 、POST {base}/api/kb/search
+  // 对接网关：GET {base}/api/v1/knowledge-bases 、POST {base}/api/v1/search
+  // 鉴权：Authorization: Bearer <API Key(kb-...) 或 JWT>，见「知识库 API Key」设置项。
   const kbStatusElements = /* @__PURE__ */ new Set();
   let kbLibsCache = null;
   function parseKbLibIds(raw) {
@@ -5084,7 +5085,12 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
             }
             resolve(data);
           } else {
-            reject(new Error("知识库 API 返回 HTTP " + response.status));
+            let detail = "";
+            let payload = response.response;
+            if (payload == null) { try { payload = JSON.parse(response.responseText); } catch { payload = null; } }
+            if (payload && typeof payload === "object") detail = String(payload.detail || payload.error || payload.message || "");
+            if (!detail && (response.status === 401 || response.status === 403)) detail = "鉴权失败，请检查 API Key";
+            reject(new Error("知识库 API HTTP " + response.status + (detail ? "：" + detail : "")));
           }
         },
         onerror() { reject(new Error("知识库 API 网络请求失败，请确认后端服务已启动")); },
@@ -5092,27 +5098,42 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       });
     });
   }
+  function kbExtractArray(data, keys) {
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object") {
+      for (const key of keys) if (Array.isArray(data[key])) return data[key];
+    }
+    return [];
+  }
   async function kbListLibs(settings, force) {
     const base = kbApiBase(settings);
     if (!force && kbLibsCache && kbLibsCache.base === base) return kbLibsCache.libs;
-    const data = await kbApiRequest(settings, "/api/kb/libs", "GET");
-    const libs = Array.isArray(data && data.libs)
-      ? data.libs.map((item) => ({
-          id: String(item && item.id || ""),
-          name: String((item && item.name) || (item && item.id) || "未命名库"),
-          count: Number(item && item.count) || 0
-        })).filter((item) => item.id)
-      : [];
+    const data = await kbApiRequest(settings, "/api/v1/knowledge-bases", "GET");
+    const rows = kbExtractArray(data, ["items", "knowledge_bases", "data", "results", "libs"]);
+    const libs = rows.map((item) => ({
+      id: String((item && (item.id || item.kb_id || item.uuid)) || ""),
+      name: String((item && (item.name || item.title)) || (item && item.id) || "未命名库"),
+      count: Number(item && (item.document_count != null ? item.document_count : item.count)) || 0
+    })).filter((item) => item.id);
     kbLibsCache = { base, libs };
     return libs;
   }
   async function kbSearchRemote(settings, query, topK) {
-    const data = await kbApiRequest(settings, "/api/kb/search", "POST", {
-      libs: settings.kbLibs,
+    const data = await kbApiRequest(settings, "/api/v1/search", "POST", {
       query,
-      topK
+      knowledge_base_ids: settings.kbLibs,
+      top_k: Math.max(1, Math.min(50, Number(topK) || 5)),
+      rerank: true
     });
-    return Array.isArray(data && data.chunks) ? data.chunks : [];
+    const rows = kbExtractArray(data, ["results", "chunks", "data", "items"]);
+    return rows.map((item) => {
+      const text = String((item && (item.content != null ? item.content : item.text)) || "").trim();
+      if (!text) return null;
+      const filename = String((item && (item.filename || item.title || item.document_name)) || "").replace(/\.[^.]+$/, "");
+      const page = Number(item && item.page_number) || 0;
+      const title = filename ? (page > 0 ? filename + " 第" + page + "页" : filename) : "";
+      return { text, title, score: Number(item && item.score) || 0 };
+    }).filter(Boolean);
   }
   function kbFormatContext(chunks, maxChars) {
     const blocks = [];
@@ -5190,7 +5211,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
           checkbox,
           lib.h("div", { style: { flex: "1", minWidth: "0" } }, [
             lib.h("div", { style: { fontWeight: "600", color: "var(--ocs-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, item.name),
-            lib.h("div", { className: "secondary", style: { fontSize: "12px" } }, item.count + " 篇资料")
+            lib.h("div", { className: "secondary", style: { fontSize: "12px" } }, item.count + " 篇文档")
           ])
         ]));
       }
@@ -5215,7 +5236,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       title: "选择知识库（后端）",
       width: 520,
       content: lib.h("div", { style: { width: "100%" } }, [
-        lib.h("div", { className: "secondary", style: { lineHeight: "1.6" } }, "列表来自知识库后端 GET /api/kb/libs。勾选的库会在答题时参与检索（POST /api/kb/search），未勾选的库不会被查询。"),
+        lib.h("div", { className: "secondary", style: { lineHeight: "1.6" } }, "列表来自知识库网关 GET /api/v1/knowledge-bases。勾选的库会在答题时参与检索（POST /api/v1/search），未勾选的库不会被查询。"),
         toolbar,
         statusEl,
         listEl
@@ -7472,17 +7493,17 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
           aiKbApiBase: {
             label: "知识库 API 地址",
             defaultValue: "",
-            attrs: { type: "text", placeholder: "http://127.0.0.1:8000", title: "自建知识库服务地址，需实现 GET /api/kb/libs 与 POST /api/kb/search，接口约定见仓库 README。" }
+            attrs: { type: "text", placeholder: "http://<服务器IP>:8080", title: "知识库网关基址，脚本调用 GET /api/v1/knowledge-bases 与 POST /api/v1/search。只填到端口，不要带 /api 等后缀。" }
           },
           aiKbApiKey: {
             label: "知识库 API Key",
             defaultValue: "",
-            attrs: { type: "password", title: "可选。填写后以 Bearer Token 随知识库请求发送。" }
+            attrs: { type: "password", title: "网关鉴权凭证，以 Authorization: Bearer 发送。填 Web「API Key 管理」创建的 kb-... 密钥（推荐，可绑定库与限流），或登录返回的 JWT。所有 /api/v1/* 接口都需要鉴权。" }
           },
           aiKbTopK: {
             label: "知识库检索片段数",
             defaultValue: 5,
-            attrs: { type: "number", min: 1, max: 15, step: 1, title: "每题注入多少段最相关资料。资料越多覆盖越全，但更耗 Token，建议 3-8。" }
+            attrs: { type: "number", min: 1, max: 50, step: 1, title: "每题检索多少段最相关资料（top_k，1-50）。资料越多覆盖越全，但更耗 Token，建议 3-8。" }
           },
           aiKbContextChars: {
             label: "资料字数上限",
@@ -20380,7 +20401,7 @@ modal-element .modal-confirm-button:hover,
 	border-color: transparent;
 }
 
-/* ==================== 界面与交互优化（ai.16） ==================== */
+/* ==================== 界面与交互优化（ai.17） ==================== */
 container-element {
   display: flex;
   flex-direction: column;
