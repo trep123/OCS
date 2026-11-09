@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				4.15.3-ai.16
+// @version    				4.15.3-ai.17
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -1638,66 +1638,61 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
     return Array.from(root2.querySelectorAll(selector));
   }
   dom.$$el = $$el;
+  // 只从非交互区域拖动，并始终让整个窗口留在可见区域。
+  function ocsClampDragPosition(target, left, top) {
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - target.offsetWidth - margin);
+    const maxY = Math.max(margin, window.innerHeight - target.offsetHeight - margin);
+    target.style.left = Math.min(Math.max(margin, left), maxX) + "px";
+    target.style.top = Math.min(Math.max(margin, top), maxY) + "px";
+  }
+  function ocsDragOnControl(target) {
+    return target instanceof Element && !!target.closest("button, a, input, select, textarea, .dropdown, [contenteditable='true'], [role='button']");
+  }
   function enableElementDraggable(header2, target, ondrag) {
-    let pos1 = 0;
-    let pos2 = 0;
-    let pos3 = 0;
-    let pos4 = 0;
-    header2.addEventListener("mousedown", dragMouseDown);
-    function dragMouseDown(e) {
-      e = e || window.event;
-      pos3 = e.clientX;
-      pos4 = e.clientY;
-      document.addEventListener("mouseup", closeDragElement);
-      document.addEventListener("mousemove", elementDrag);
-    }
-    function elementDrag(e) {
-      e.stopPropagation();
-      e = e || window.event;
-      pos1 = pos3 - e.clientX;
-      pos2 = pos4 - e.clientY;
-      pos3 = e.clientX;
-      pos4 = e.clientY;
-      target.style.top = Math.max(target.offsetTop - pos2, 10) + "px";
-      target.style.left = target.offsetLeft - pos1 + "px";
-    }
-    function closeDragElement() {
-      ondrag === null || ondrag === void 0 ? void 0 : ondrag();
-      document.removeEventListener("mouseup", closeDragElement);
-      document.removeEventListener("mousemove", elementDrag);
-    }
+    header2.addEventListener("mousedown", (e) => {
+      if (e.button !== 0 || ocsDragOnControl(e.target)) return;
+      let x = e.clientX, y = e.clientY, moved = false;
+      const move = (event) => {
+        const dx = event.clientX - x, dy = event.clientY - y;
+        x = event.clientX; y = event.clientY;
+        if (dx || dy) moved = true;
+        ocsClampDragPosition(target, target.offsetLeft + dx, target.offsetTop + dy);
+      };
+      const end = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", end);
+        window.removeEventListener("blur", end);
+        if (moved && ondrag) ondrag();
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", end);
+      window.addEventListener("blur", end);
+    });
   }
   dom.enableElementDraggable = enableElementDraggable;
   function enableElementTouchDraggable(header2, target, ondrag) {
-    let pos1 = 0;
-    let pos2 = 0;
-    let pos3 = 0;
-    let pos4 = 0;
-    header2.addEventListener("touchstart", dragTouchStart);
-    function dragTouchStart(e) {
-      e = e || window.event;
-      const touch = e.touches[0];
-      pos3 = touch.clientX;
-      pos4 = touch.clientY;
-      document.addEventListener("touchend", closeDragElement);
-      document.addEventListener("touchmove", elementDrag);
-    }
-    function elementDrag(e) {
-      e.stopPropagation();
-      e = e || window.event;
-      const touch = e.touches[0];
-      pos1 = pos3 - touch.clientX;
-      pos2 = pos4 - touch.clientY;
-      pos3 = touch.clientX;
-      pos4 = touch.clientY;
-      target.style.top = Math.max(target.offsetTop - pos2, 10) + "px";
-      target.style.left = target.offsetLeft - pos1 + "px";
-    }
-    function closeDragElement() {
-      ondrag === null || ondrag === void 0 ? void 0 : ondrag();
-      document.removeEventListener("touchend", closeDragElement);
-      document.removeEventListener("touchmove", elementDrag);
-    }
+    header2.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1 || ocsDragOnControl(e.target)) return;
+      let x = e.touches[0].clientX, y = e.touches[0].clientY, moved = false;
+      const move = (event) => {
+        if (!event.touches.length) return;
+        const dx = event.touches[0].clientX - x, dy = event.touches[0].clientY - y;
+        x = event.touches[0].clientX; y = event.touches[0].clientY;
+        if (dx || dy) moved = true;
+        ocsClampDragPosition(target, target.offsetLeft + dx, target.offsetTop + dy);
+        if (event.cancelable) event.preventDefault();
+      };
+      const end = () => {
+        document.removeEventListener("touchmove", move);
+        document.removeEventListener("touchend", end);
+        document.removeEventListener("touchcancel", end);
+        if (moved && ondrag) ondrag();
+      };
+      document.addEventListener("touchmove", move, { passive: false });
+      document.addEventListener("touchend", end);
+      document.addEventListener("touchcancel", end);
+    }, { passive: true });
   }
   dom.enableElementTouchDraggable = enableElementTouchDraggable;
   var elements$1 = {};
@@ -2514,34 +2509,63 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
   class DropdownElement extends interface_1$4.IElement {
     constructor() {
       super(...arguments);
-      this.triggerElement = (0, dom_1$3.h)("button");
+      this.triggerElement = (0, dom_1$3.h)("button", { type: "button" });
       this.content = (0, dom_1$3.h)("div", { className: "dropdown-content" });
-      this.trigger = "hover";
     }
     connectedCallback() {
       this.append(this.triggerElement, this.content);
       this.classList.add("dropdown");
-      if (this.trigger === "click") {
-        this.triggerElement.onclick = () => {
-          this.content.classList.toggle("show");
-        };
-      } else {
-        this.triggerElement.onmouseover = () => {
-          this.content.classList.add("show");
-        };
-        this.triggerElement.onmouseout = () => {
-          this.content.classList.remove("show");
-        };
-        this.content.onmouseover = () => {
-          this.content.classList.add("show");
-        };
-        this.content.onmouseout = () => {
-          this.content.classList.remove("show");
-        };
-      }
-      this.content.onclick = () => {
-        this.content.classList.remove("show");
+      this.triggerElement.setAttribute("aria-haspopup", "true");
+      this.triggerElement.setAttribute("aria-expanded", "false");
+      const setOpen = (open) => {
+        this.content.classList.toggle("show", open);
+        this.triggerElement.setAttribute("aria-expanded", String(open));
+        if (!open) return;
+        // 按可用空间调整方向，避免菜单在窗口靠边时被遮挡。
+        this.content.style.left = "0";
+        this.content.style.top = "calc(100% + 6px)";
+        this.content.style.bottom = "auto";
+        let rect = this.content.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 8) this.content.style.left = (window.innerWidth - 8 - rect.right) + "px";
+        rect = this.content.getBoundingClientRect();
+        const triggerRect = this.triggerElement.getBoundingClientRect();
+        if (rect.bottom > window.innerHeight - 8 && triggerRect.top > rect.height + 8) {
+          this.content.style.top = "auto";
+          this.content.style.bottom = "calc(100% + 6px)";
+        }
       };
+      this._setOpen = setOpen;
+      this.triggerElement.addEventListener("click", () => {
+        const open = !this.content.classList.contains("show");
+        const root = this.getRootNode();
+        root.querySelectorAll("dropdown-element").forEach((item) => { if (item !== this && item._setOpen) item._setOpen(false); });
+        setOpen(open);
+      });
+      this.triggerElement.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault(); setOpen(true);
+          const first = this.content.querySelector("button");
+          if (first) first.focus();
+        }
+      });
+      this.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && this.content.classList.contains("show")) {
+          e.preventDefault(); e.stopPropagation(); setOpen(false); this.triggerElement.focus();
+        }
+      });
+      this.content.addEventListener("click", (e) => {
+        if (e.target.closest(".dropdown-option")) setOpen(false);
+      });
+      // document 无法看到 closed shadow 内部路径；分别处理宿主外和根节点内部点击。
+      this._root = this.getRootNode();
+      this._outside = (e) => { if (!e.composedPath().includes(this._root.host)) setOpen(false); };
+      this._inside = (e) => { if (!e.composedPath().includes(this)) setOpen(false); };
+      document.addEventListener("pointerdown", this._outside, true);
+      this._root.addEventListener("pointerdown", this._inside, true);
+    }
+    disconnectedCallback() {
+      if (this._outside) document.removeEventListener("pointerdown", this._outside, true);
+      if (this._inside && this._root) this._root.removeEventListener("pointerdown", this._inside, true);
     }
   }
   dropdown.DropdownElement = DropdownElement;
@@ -2563,7 +2587,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
   class MessageElement extends interface_1$2.IElement {
     constructor() {
       super(...arguments);
-      this.closer = (0, dom_1$2.h)("span", { className: "message-closer" }, "x");
+      this.closer = (0, dom_1$2.h)("button", { className: "message-closer", type: "button", ariaLabel: "关闭提示" }, "×");
       this.contentContainer = (0, dom_1$2.h)("span", { className: "message-content-container" });
       this.type = "info";
       this.content = "";
@@ -2579,21 +2603,18 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       }
       this.duration = Math.max((_a = this.duration) !== null && _a !== void 0 ? _a : 5, 0);
       this.append(this.contentContainer);
+      let closed = false, timer;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        clearTimeout(timer);
+        try { if (this.onClose) this.onClose(); } finally { this.remove(); }
+      };
       if (this.closeable) {
         this.append(this.closer);
-        this.closer.addEventListener("click", () => {
-          var _a2;
-          (_a2 = this.onClose) === null || _a2 === void 0 ? void 0 : _a2.call(this);
-          this.remove();
-        });
+        this.closer.addEventListener("click", close);
       }
-      if (this.duration) {
-        setTimeout(() => {
-          var _a2;
-          (_a2 = this.onClose) === null || _a2 === void 0 ? void 0 : _a2.call(this);
-          this.remove();
-        }, this.duration * 1e3);
-      }
+      if (this.duration) timer = setTimeout(close, this.duration * 1e3);
     }
   }
   message.MessageElement = MessageElement;
@@ -2840,27 +2861,26 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       this.container.append(...styles, this.messageContainer);
       const handlePosition = () => {
         const pos = config2.store.getPosition();
-        if (pos.x > document.documentElement.clientWidth || pos.x < 0) {
-          config2.store.setPosition(10, 10);
-        }
-        if (pos.y > document.documentElement.clientHeight || pos.y < 0) {
-          config2.store.setPosition(10, 10);
-        }
-        this.container.style.left = pos.x + "px";
-        this.container.style.top = pos.y + "px";
+        this.container.style.left = (Number.isFinite(Number(pos.x)) ? Number(pos.x) : 10) + "px";
+        this.container.style.top = (Number.isFinite(Number(pos.y)) ? Number(pos.y) : 10) + "px";
         const positionHandler = () => {
           config2.store.setPosition(this.container.offsetLeft, this.container.offsetTop);
         };
         (0, utils_1.enableElementDraggable)(this.container.header, this.container, positionHandler);
         (0, utils_1.enableElementTouchDraggable)(this.container.header, this.container, positionHandler);
+        window.addEventListener("resize", () => requestAnimationFrame(() => this.keepInViewport()));
+        requestAnimationFrame(() => this.keepInViewport());
       };
       const handleVisible = () => {
         window.addEventListener("click", (e) => {
-          if (e.detail === Math.max(config2.render.switchPoint, 3)) {
-            this.container.style.top = e.y + "px";
-            this.container.style.left = e.x + "px";
-            config2.store.setPosition(e.x, e.y);
+          // 连点只用于恢复隐藏窗口；不干扰页面输入或可见状态下的操作。
+          const editable = e.target instanceof Element && e.target.closest("input, textarea, select, button, a, [contenteditable='true']");
+          const count = Number(config2.render.switchPoint) || 3;
+          if (config2.store.getVisual() === "hidden" && e.button === 0 && !editable && !e.composedPath().includes(this.wrapper) && e.detail === Math.max(count, 3)) {
+            this.container.style.top = e.clientY + "px";
+            this.container.style.left = e.clientX + "px";
             this.setVisual("normal");
+            requestAnimationFrame(() => this.keepInViewport());
           }
         });
       };
@@ -2906,6 +2926,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       return __awaiter$1(this, void 0, void 0, function* () {
         this.initHeader(urls, currentPanelName);
         yield this.renderBody(currentPanelName);
+        requestAnimationFrame(() => this.keepInViewport());
       });
     }
     initHeader(urls, currentPanelName) {
@@ -2943,9 +2964,10 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
               const script2 = project2.scripts[key];
               if (!script2.hideInPanel) {
                 const optionSelected = isCurrentPanel(project2.name, script2, currentPanelName);
-                const option = (0, utils_1.h)("div", { className: "dropdown-option" }, script2.name);
+                const option = (0, utils_1.h)("button", { className: "dropdown-option", type: "button" }, script2.name);
                 if (optionSelected) {
                   option.classList.add("active");
+                  option.setAttribute("aria-current", "page");
                 }
                 if (selected !== true && optionSelected) {
                   selected = true;
@@ -2960,32 +2982,24 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
           if (selected) {
             dropdown2.classList.add("active");
           }
-          dropdown2.triggerElement = (0, utils_1.h)("div", { className: "dropdown-trigger-element" }, project2.name);
-          dropdown2.triggerElement.style.padding = "0px 8px";
+          dropdown2.triggerElement = (0, utils_1.h)("button", { className: "dropdown-trigger-element", type: "button" }, project2.name);
+          dropdown2.triggerElement.setAttribute("aria-label", project2.name + "：打开功能菜单");
           dropdown2.content.append(...options);
           scriptDropdowns.push(dropdown2);
         }
       }
       const isMinimize = () => this.config.store.getVisual() === "minimize";
-      const visualSwitcher = utils_1.$ui.tooltip((0, utils_1.h)("div", {
-        className: "switch ",
-        title: isMinimize() ? "点击展开窗口" : "点击最小化窗口",
-        innerHTML: isMinimize() ? expandSvg : minimizeSvg,
-        onclick: () => {
-          this.setVisual(isMinimize() ? "normal" : "minimize");
-          visualSwitcher.title = isMinimize() ? "点击展开窗口" : "点击最小化窗口";
-          visualSwitcher.innerHTML = isMinimize() ? expandSvg : minimizeSvg;
-        }
-      }));
+      const visualSwitcher = (0, utils_1.h)("button", {
+        className: "switch", type: "button",
+        onclick: () => this.setVisual(isMinimize() ? "normal" : "minimize")
+      });
       this.container.header.visualSwitcher = visualSwitcher;
+      this.updateVisualSwitcher();
       this.container.header.replaceChildren();
-      this.container.header.append((0, utils_1.h)("div", { style: { width: "100%" } }, [
-        (0, utils_1.h)("div", { style: { display: "flex", width: "100%" } }, [
-          profile,
-          ...scriptDropdowns,
-          this.container.header.visualSwitcher || ""
-        ]),
-        (0, utils_1.h)("div", { style: { display: "flex", width: "100%" } }, [this.extraMenuBar])
+      this.container.header.append((0, utils_1.h)("div", { className: "ocs-header-inner" }, [
+        (0, utils_1.h)("div", { className: "ocs-header-main" }, [profile, visualSwitcher]),
+        (0, utils_1.h)("nav", { className: "ocs-projects", ariaLabel: "功能分类" }, scriptDropdowns),
+        this.extraMenuBar
       ]));
     }
     renderBody(currentPanelName) {
@@ -3011,7 +3025,25 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       });
     }
     setFontSize(fontsize) {
-      this.container.style.font = `${fontsize}px  Menlo, Monaco, Consolas, 'Courier New', monospace`;
+      this.container.style.font = `${fontsize}px var(--ocs-font)`;
+      requestAnimationFrame(() => this.keepInViewport());
+    }
+    keepInViewport() {
+      if (!this.container.isConnected || this.container.classList.contains("hidden")) return;
+      const oldX = this.container.offsetLeft, oldY = this.container.offsetTop;
+      ocsClampDragPosition(this.container, oldX, oldY);
+      const x = this.container.offsetLeft, y = this.container.offsetTop;
+      if (x !== oldX || y !== oldY) this.config.store.setPosition(x, y);
+    }
+    updateVisualSwitcher() {
+      const button = this.container.header.visualSwitcher;
+      if (!button) return;
+      const minimized = this.config.store.getVisual() === "minimize";
+      const text = minimized ? "展开窗口" : "最小化窗口";
+      button.setAttribute("aria-label", text);
+      button.setAttribute("title", text);
+      button.setAttribute("aria-expanded", String(!minimized));
+      button.innerHTML = minimized ? expandSvg : minimizeSvg;
     }
     setVisual(value) {
       this.container.className = "";
@@ -3023,6 +3055,8 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
         this.container.classList.add("normal");
       }
       this.config.store.setVisual(value);
+      this.updateVisualSwitcher();
+      if (value !== "hidden") requestAnimationFrame(() => this.keepInViewport());
     }
     changeRenderURLs(urls) {
       return __awaiter$1(this, void 0, void 0, function* () {
@@ -3067,7 +3101,12 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
     menu(label, config2) {
       return __awaiter$1(this, void 0, void 0, function* () {
         this.extraMenuBar.style.display = "flex";
-        const btn = (0, utils_1.h)("button", label);
+        const btn = (0, utils_1.h)("button", { type: "button" }, label);
+        if (config2.scriptPanelLink) {
+          const name = String(config2.scriptPanelLink.name || "").replace(/^\S+\s+/, "");
+          if (name) btn.textContent = label + " " + name;
+          btn.setAttribute("aria-label", "快捷跳转：" + name);
+        }
         btn.addEventListener("click", () => {
           if (config2.scriptPanelLink) {
             this.pin(config2.scriptPanelLink).then(() => {
@@ -3084,7 +3123,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
         this.extraMenuBar.append(utils_1.$ui.tooltip(btn));
         const name = yield utils_1.$store.getTab(utils_1.$const.TAB_CURRENT_PANEL_NAME);
         if (config2.scriptPanelLink) {
-          if (isCurrentPanel(config2.scriptPanelLink.projectName, config2.scriptPanelLink, name)) {
+          if (isCurrentPanel(config2.scriptPanelLink.projectName, config2.scriptPanelLink, this.defaults.panelName(name))) {
             this.extraMenuBar.querySelectorAll(".script-panel-link").forEach((el) => el.classList.remove("active"));
             btn.classList.add("active");
           }
@@ -3096,6 +3135,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       const anchor = parent.children.length ? parent.children[utils_1.$.random(0, parent.children.length - 1)] : null;
       if (anchor) anchor.after(this.wrapper);
       else parent.append(this.wrapper);
+      requestAnimationFrame(() => this.keepInViewport());
     }
   }
   customWindow.CustomWindow = CustomWindow;
@@ -20339,6 +20379,97 @@ modal-element .modal-confirm-button:hover,
 	background: var(--ocs-brand-gradient) !important;
 	border-color: transparent;
 }
+
+/* ==================== 界面与交互优化（ai.16） ==================== */
+container-element {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 16px));
+  min-width: 0;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: visible; /* 菜单、消息和提示不能被窗口裁切 */
+  border-radius: 16px;
+  box-shadow: 0 20px 54px -22px var(--ocs-shadow-color), 0 4px 14px -8px var(--ocs-shadow-color);
+  letter-spacing: 0;
+}
+container-element::before { border-radius: 16px 16px 0 0; }
+container-element.minimize { display: flex; width: max-content; max-width: calc(100vw - 16px); }
+header-element { display: block; padding: 12px 14px 0; border-radius: 16px 16px 0 0; flex: none; }
+.ocs-header-inner { min-width: 0; }
+.ocs-header-main { display: flex; align-items: center; min-height: 34px; gap: 8px; }
+header-element .profile { min-width: 0; flex: 1; padding: 0; touch-action: none; }
+.ocs-brand { gap: 8px; min-width: 0; }
+.ocs-brand-logo { width: 30px; height: 30px; border-radius: 9px; }
+.ocs-brand-name { font-size: 15px; letter-spacing: .1px; }
+.ocs-brand-version { color: var(--ocs-text-2); font-size: 10px; padding: 1px 7px; }
+header-element .switch {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--ocs-border); border-radius: 10px;
+  background: var(--ocs-surface); color: var(--ocs-text-2); cursor: pointer;
+}
+header-element .switch:hover { color: var(--ocs-primary); background: var(--ocs-primary-soft); border-color: var(--ocs-primary); }
+header-element .switch svg { width: 19px; height: 19px; }
+.ocs-projects { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; }
+header-element .dropdown { line-height: normal; }
+.dropdown-trigger-element {
+  display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--ocs-border);
+  border-radius: 9px; padding: 7px 10px; background: var(--ocs-surface);
+  color: var(--ocs-text-2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.dropdown-trigger-element::after { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+.dropdown-trigger-element:hover, .dropdown-trigger-element[aria-expanded='true'] { background: var(--ocs-primary-soft); color: var(--ocs-primary); border-color: var(--ocs-primary-light); }
+.dropdown.active .dropdown-trigger-element { background: var(--ocs-primary-soft); border-color: transparent; }
+.dropdown-content { min-width: 176px; max-width: calc(100vw - 32px); max-height: min(45vh, 320px); padding: 6px; }
+.dropdown-content .dropdown-option {
+  display: block; width: 100%; border: 0; text-align: left; white-space: normal;
+  background: transparent; color: var(--ocs-text); padding: 9px 11px;
+  font: inherit; line-height: 1.4; cursor: pointer;
+}
+.dropdown-content .dropdown-option.active { font-weight: 700; }
+header-element .extra-menu-bar {
+  gap: 6px; flex-wrap: nowrap; align-items: center; overflow-x: auto; overscroll-behavior-x: contain;
+  margin: 12px 0 0; padding: 10px 0; border-top: 1px solid var(--ocs-divider);
+  scrollbar-width: thin;
+}
+header-element .extra-menu-bar .script-panel-link {
+  flex: none; margin: 0 !important; padding: 6px 10px; font: inherit; font-size: 12px;
+  line-height: 1.4; white-space: nowrap; border-radius: 9px; box-shadow: none;
+}
+container-element.minimize header-element { padding: 8px 10px; }
+container-element.minimize .ocs-projects,
+container-element.minimize .extra-menu-bar { display: none !important; }
+container-element.minimize .ocs-header-main { min-height: 30px; }
+container-element.minimize .switch { margin-left: 10px; width: 30px; height: 30px; }
+container-element > .body { flex: 1 1 auto; min-height: 0; width: 100%; height: auto; overscroll-behavior: contain; }
+script-panel-element { box-sizing: border-box; padding: 0 14px 16px; overflow: visible; }
+script-panel-element .script-panel-body { padding: 0 4px; overflow-wrap: anywhere; }
+.separator { justify-content: flex-start; text-align: left; padding: 9px 4px 12px; font-size: 14px; font-weight: 700; letter-spacing: 0; color: var(--ocs-text); }
+.separator::before { display: none; }
+.separator::after { margin-left: 12px !important; }
+.card { padding: 0 4px; }
+.notes { box-sizing: border-box; width: auto; margin: 0 4px; padding: 10px 12px; border-radius: 8px; line-height: 1.65; overflow-wrap: anywhere; }
+.notes ul, .notes ol { line-height: 1.65; }
+.configs .configs-body config-element label { white-space: normal; }
+.configs .configs-body config-element .config-wrapper input:not([type='checkbox'], [type='radio'], [type='range'], [type='button']),
+.configs .configs-body config-element .config-wrapper select,
+.configs .configs-body config-element .config-wrapper textarea { box-sizing: border-box; max-width: 100%; min-height: 32px; }
+.base-style-button:disabled, .base-style-button-secondary:disabled, modal-element .modal-confirm-button:disabled { background: var(--ocs-disabled-bg); color: var(--ocs-text-3); border-color: var(--ocs-border); box-shadow: none; filter: none; cursor: not-allowed !important; }
+.message-container { position: fixed; top: 16px; right: 16px; bottom: auto; left: auto; transform: none; width: min(400px, calc(100vw - 32px)); min-width: 0; z-index: calc(var(--ocs-z) + 8); pointer-events: none; }
+.message-container message-element { pointer-events: auto; }
+.message-container message-element .message-closer { border: 0; padding: 0; line-height: 18px; font-family: inherit; }
+@media (max-width: 480px) {
+  header-element { padding: 10px 12px 0; }
+  .ocs-brand-version { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+  .ocs-projects { margin-top: 10px; }
+  script-panel-element { padding: 0 10px 14px; }
+  .configs, .configs .configs-body { display: block; width: 100%; }
+  .configs .configs-body config-element { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 8px; padding: 4px 0; }
+  .configs .configs-body config-element label, .configs .configs-body config-element .config-wrapper { display: block; padding: 0 !important; min-width: 0; }
+  .configs .configs-body config-element .config-wrapper > *:not(.tooltip) { float: none; }
+}
+
 `;
 
 /* eslint-disable no-undef */
