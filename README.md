@@ -15,7 +15,7 @@
 ## 目录结构
 
 ```
-legacy/                 旧版单文件 bundle（回归基线，勿改）
+legacy/                 旧版单文件 bundle（本地回归基线，不入 git）
 src/
   shared/               两端共用
     protocol.ts         HTTP 协议 DTO：AnswerRequest/AnswerResponse/FeedbackRequest
