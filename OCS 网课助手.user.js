@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				4.15.3-ai.18
+// @version    				4.15.3-ai.20
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -4471,6 +4471,8 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
       GM_deleteValue(AI_LEGACY_CONFIG_KEY);
     }
     for (const key of GM_listValues()) if (isRemovedConfigKey(key)) GM_deleteValue(key);
+    // legacy 版本把按钮文案存成了设置值，会盖掉新 defaultValue；纯展示项，直接清掉
+    if (GM_getValue("common.settings.aiKbButton", void 0) === "上传 / 管理知识库文件") GM_deleteValue("common.settings.aiKbButton");
     const oldUploadMode = GM_getValue("common.settings.upload", void 0);
     if (oldUploadMode !== void 0 && !Number.isFinite(Number(oldUploadMode))) GM_deleteValue("common.settings.upload");
   }
@@ -5062,7 +5064,10 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
     }
   }
   function kbApiBase(settings) {
-    return String((settings && settings.kbApiBase) || "").trim().replace(/\/+$/, "");
+    const raw = String((settings && settings.kbApiBase) || "").trim();
+    if (!raw) return "";
+    // 只保留 origin，避免用户误填 /api/v1/... 全路径导致二次拼接 404
+    try { return new URL(raw).origin; } catch { return raw.replace(/\/+$/, ""); }
   }
   function kbApiRequest(settings, path, method, body) {
     const base = kbApiBase(settings);
@@ -7515,6 +7520,7 @@ try { if (typeof GM_notification === 'function') GM_notification = __ocsWithNati
             defaultValue: "选择参与答题的后端知识库",
             attrs: { type: "button" },
             onload() {
+              this.value = "选择参与答题的后端知识库";
               this.onclick = () => openKBManager();
             }
           },
